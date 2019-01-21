@@ -43,7 +43,8 @@ class MartaGan:
     # random noise for generator
     self.input_noise = tf.placeholder(tf.float32, [self.batch_size, self.input_noise_dim], name='noise')
     # the fake dataset of generating
-    self.net_g = MartaGanBasicNetWork.generator(input_data=self.input_noise, image_size=self.image_size, is_train=True, reuse=False)
+    self.net_g = MartaGanBasicNetWork.generator(input_data=self.input_noise, image_size=self.image_size, is_train=True,
+                                                reuse=False)
     # feature of fake images
     self.net_feature_extract_fake, self.logits_fake, self.feature_fake = MartaGanBasicNetWork.feature_extract_layer(
       input_data=self.net_g.outputs,
@@ -94,15 +95,15 @@ class MartaGan:
       data_files = glob(os.path.join(self.dataset_path, "*.jpg"))
       # load param
       self.load_parma(sess, self.net_g, self.net_feature_extract_fake, load_epoch)
-      for cur_epoch in range(load_epoch, epoch):
+      for cur_epoch in range(load_epoch + 1, epoch):
         # every epoch shuffle data_files
         shuffle(data_files)
         # get total batch
         total_batch = int(len(data_files) / self.batch_size)
+        # every batch get a random input noise
+        input_noise = np.random.uniform(low=-1, high=1, size=(self.batch_size, self.input_noise_dim)).astype(
+          np.float32)
         for cur_batch in range(total_batch):
-          # every batch get a random input noise
-          input_noise = np.random.uniform(low=-1, high=1, size=(self.batch_size, self.input_noise_dim)).astype(
-            np.float32)
           # get one batch of real images
           batch_files = data_files[cur_batch * self.batch_size:(cur_batch + 1) * self.batch_size]
           batch_images = [Utils.get_image(batch_file, self.image_size, resize_w=self.image_size,
@@ -117,18 +118,24 @@ class MartaGan:
           for _ in range(2):
             g_loss, _ = sess.run([self.g_loss, self.g_optimizer],
                                  feed_dict={self.input_noise: input_noise, self.real_images: batch_real_images})
-          logging.info("epoch:[%2d/%2d], batch:[%4d/%4d], d_loss: %.8f, g_loss: %.8f",
+          logging.info("epoch:[%4d/%4d], batch:[%4d/%4d], d_loss: %.8f, g_loss: %.8f",
                        cur_epoch, epoch, cur_batch + 1, total_batch, d_loss, g_loss)
 
         if cur_epoch % 10 == 0:
-          # 10 epoch end, compute the loss and generate sample image
-          image, d_loss, g_loss = sess.run([self.sample_image, self.d_loss, self.g_loss],
-                                           feed_dict={self.input_noise: input_noise,
-                                                      self.real_images: batch_real_images})
-          logging.info("epoch %4d end, d_loss: %.8f, g_loss: %.8f",
-                       cur_epoch, d_loss, g_loss)
           # save images
-          Utils.save_images(image, [8, 8], os.path.join(self.sample_path, "epoch{}.png".format(str(cur_epoch))))
+          for sample_image_num in range(5):
+            # a new input noise
+            input_noise = np.random.uniform(low=-1, high=1, size=(self.batch_size, self.input_noise_dim)).astype(
+              np.float32)
+            images = sess.run(self.sample_image, feed_dict={self.input_noise: input_noise,
+                                                            self.real_images: batch_real_images})
+            # save images
+            side = 1
+            while side * side < self.batch_size:
+              side += 1
+            Utils.save_images(images, [side, side],
+                              os.path.join(self.sample_path,
+                                           "epoch{}-sample{}.png".format(str(cur_epoch), str(sample_image_num))))
           logging.info("sample image saved!")
 
           # save net param
@@ -184,7 +191,8 @@ class MartaGan:
     set is_train=False, reuse=True, fix param ten generate sampler
 
     """
-    net_g = MartaGanBasicNetWork.generator(input_data=input_data, image_size=self.image_size, is_train=False, reuse=True)
+    net_g = MartaGanBasicNetWork.generator(input_data=input_data, image_size=self.image_size, is_train=False,
+                                           reuse=True)
     return net_g.outputs
 
   def generate_image(self, num):
