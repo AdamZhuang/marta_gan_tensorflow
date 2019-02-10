@@ -1,4 +1,5 @@
 import os
+import time
 import tensorflow as tf
 import tensorlayer as tl
 import numpy as np
@@ -19,7 +20,7 @@ class MartaGan:
                image_size=256,
                image_dim=3,
                input_noise_dim=100,
-               learning_rate=0.001,
+               learning_rate=0.0002,
                beta1=0.5,
                batch_size=64):
     self.dataset_path = dataset_path
@@ -41,7 +42,7 @@ class MartaGan:
     # for fake images
     #####################
     # random noise for generator
-    self.input_noise = tf.placeholder(tf.float32, [self.batch_size, self.input_noise_dim], name='noise')
+    self.input_noise = tf.placeholder(tf.float32, [self.batch_size, self.input_noise_dim], name='input_z')
     # the fake dataset of generating
     self.net_g = MartaGanBasicNetWork.generator(input_data=self.input_noise, image_size=self.image_size, is_train=True,
                                                 reuse=False)
@@ -95,20 +96,25 @@ class MartaGan:
       data_files = glob(os.path.join(self.dataset_path, "*.jpg"))
       # load param
       self.load_parma(sess, self.net_g, self.net_feature_extract_fake, load_epoch)
+      # static_input_noise
+      static_input_noise = np.random.uniform(low=-1, high=1, size=(self.batch_size, self.input_noise_dim)).astype(
+        np.float32)
       for cur_epoch in range(load_epoch + 1, epoch):
         # every epoch shuffle data_files
         shuffle(data_files)
         # get total batch
         total_batch = int(len(data_files) / self.batch_size)
-        # every batch get a random input noise
-        input_noise = np.random.uniform(low=-1, high=1, size=(self.batch_size, self.input_noise_dim)).astype(
-          np.float32)
         for cur_batch in range(total_batch):
+          # every batch get a random input noise
+          input_noise = np.random.uniform(low=-1, high=1, size=(self.batch_size, self.input_noise_dim)).astype(
+            np.float32)
           # get one batch of real images
           batch_files = data_files[cur_batch * self.batch_size:(cur_batch + 1) * self.batch_size]
           batch_images = [Utils.get_image(batch_file, self.image_size, resize_w=self.image_size,
                                           is_grayscale=0) for batch_file in batch_files]
           batch_real_images = np.array(batch_images).astype(np.float32)
+
+          start_time = time.time()
 
           # train d
           d_loss, _ = sess.run([self.d_loss, self.d_optimizer],
@@ -118,16 +124,16 @@ class MartaGan:
           for _ in range(2):
             g_loss, _ = sess.run([self.g_loss, self.g_optimizer],
                                  feed_dict={self.input_noise: input_noise, self.real_images: batch_real_images})
-          logging.info("epoch:[%4d/%4d], batch:[%4d/%4d], d_loss: %.8f, g_loss: %.8f",
-                       cur_epoch, epoch, cur_batch + 1, total_batch, d_loss, g_loss)
 
-        if cur_epoch % 10 == 0:
+          end_time = time.time()
+
+          logging.info("epoch:[%4d/%4d], batch:[%4d/%4d], d_loss: %.8f, g_loss: %.8f, time: %4f",
+                       cur_epoch, epoch, cur_batch + 1, total_batch, d_loss, g_loss, end_time - start_time)
+
+        if cur_epoch % 1 == 0:
           # save images
           for sample_image_num in range(5):
-            # a new input noise
-            input_noise = np.random.uniform(low=-1, high=1, size=(self.batch_size, self.input_noise_dim)).astype(
-              np.float32)
-            images = sess.run(self.sample_image, feed_dict={self.input_noise: input_noise,
+            images = sess.run(self.sample_image, feed_dict={self.input_noise: static_input_noise,
                                                             self.real_images: batch_real_images})
             # save images
             side = 1
@@ -138,6 +144,7 @@ class MartaGan:
                                            "epoch{}-sample{}.png".format(str(cur_epoch), str(sample_image_num))))
           logging.info("sample image saved!")
 
+        if cur_epoch % 5 == 0:
           # save net param
           g_vars = self.net_g.all_params
           d_vars = self.net_feature_extract_fake.all_params
@@ -145,6 +152,7 @@ class MartaGan:
           d_vars_name = os.path.join(self.checkpoint_path, "d_vars_{}.npz".format(str(cur_epoch)))
           tl.files.save_npz(g_vars, name=g_vars_name, sess=sess)
           tl.files.save_npz(d_vars, name=d_vars_name, sess=sess)
+          logging.info("net param saved!")
 
   def generator(self, net_g, logits_fake, feature_real, feature_fake):
     """

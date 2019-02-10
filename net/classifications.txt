@@ -1,0 +1,20 @@
+intersection = 1
+runway = 2
+river = 3
+beach = 4
+tenniscourt = 5
+forest = 6
+buildings = 7
+denseresidential = 8
+chaparral = 9
+golfcourse = 10
+mediumresidential = 11
+airplane = 12
+agricultural = 13
+baseballdiamond = 14
+freeway = 15
+harbor = 16
+overpass = 17
+sparseresidential = 18
+storagetanks = 19
+parkinglot = 20mobilehomepark = 21

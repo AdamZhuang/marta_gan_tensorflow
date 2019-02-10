@@ -114,7 +114,7 @@ class MartaGanBasicNetWork:
       # multi-feature
       feature = ConcatLayer([global_max1, global_max2, global_max3], name='d/concat_layer1')
 
-      net_h6 = DenseLayer(prev_layer=feature, n_units=1, act=tf.identity, W_init=w_init, name='d/h6/lin_sigmoid')
+      net_h6 = DenseLayer(prev_layer=feature, n_units=21, act=tf.identity, W_init=w_init, name='d/h6/lin_sigmoid')
 
       logits = net_h6.outputs
 
