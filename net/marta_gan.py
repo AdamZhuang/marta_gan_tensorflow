@@ -20,7 +20,7 @@ class MartaGan:
                image_size=256,
                image_dim=3,
                input_noise_dim=100,
-               learning_rate=0.0002,
+               learning_rate=0.001,
                beta1=0.5,
                batch_size=64):
     self.dataset_path = dataset_path
@@ -47,7 +47,7 @@ class MartaGan:
     self.net_g = MartaGanBasicNetWork.generator(input_data=self.input_noise, image_size=self.image_size, is_train=True,
                                                 reuse=False)
     # feature of fake images
-    self.net_feature_extract_fake, self.logits_fake, self.feature_fake = MartaGanBasicNetWork.feature_extract_layer(
+    self.net_feature_extract_fake, self.logits_fake, self.feature_fake, self.style_features_fake = MartaGanBasicNetWork.feature_extract_layer(
       input_data=self.net_g.outputs,
       is_train=True,
       reuse=False)
@@ -59,7 +59,7 @@ class MartaGan:
     self.real_images = tf.placeholder(tf.float32, [self.batch_size, self.image_size, self.image_size, self.image_dim],
                                       name='real_images')
     # feature of real images
-    self.net_feature_extract_real, self.logits_real, self.feature_real = MartaGanBasicNetWork.feature_extract_layer(
+    self.net_feature_extract_real, self.logits_real, self.feature_real, self.style_features_real = MartaGanBasicNetWork.feature_extract_layer(
       input_data=self.real_images,
       is_train=True,
       reuse=True)
@@ -72,7 +72,8 @@ class MartaGan:
     #####################
     # loss and optimizer
     #####################
-    self.g_loss, self.g_optimizer = self.generator(self.net_g, self.logits_fake, self.feature_real, self.feature_fake)
+    self.g_loss, self.g_optimizer = self.generator(self.net_g, self.logits_fake, self.feature_real, self.feature_fake,
+                                                   self.style_features_fake, self.style_features_real)
     self.d_loss, self.d_optimizer = self.discriminator(self.net_feature_extract_fake, self.logits_real,
                                                        self.logits_fake)
 
@@ -132,7 +133,7 @@ class MartaGan:
 
         if cur_epoch % 1 == 0:
           # save images
-          for sample_image_num in range(5):
+          for sample_image_num in range(1):
             images = sess.run(self.sample_image, feed_dict={self.input_noise: static_input_noise,
                                                             self.real_images: batch_real_images})
             # save images
@@ -144,7 +145,7 @@ class MartaGan:
                                            "epoch{}-sample{}.png".format(str(cur_epoch), str(sample_image_num))))
           logging.info("sample image saved!")
 
-        if cur_epoch % 5 == 0:
+        if cur_epoch % 10 == 0:
           # save net param
           g_vars = self.net_g.all_params
           d_vars = self.net_feature_extract_fake.all_params
@@ -154,7 +155,7 @@ class MartaGan:
           tl.files.save_npz(d_vars, name=d_vars_name, sess=sess)
           logging.info("net param saved!")
 
-  def generator(self, net_g, logits_fake, feature_real, feature_fake):
+  def generator(self, net_g, logits_fake, feature_real, feature_fake, style_features_fake, style_features_real):
     """
     the generator should gen image that is smiler with real image
 
@@ -167,7 +168,19 @@ class MartaGan:
     g_loss1 = tf.reduce_mean(tf.nn.sigmoid_cross_entropy_with_logits(logits=logits_fake,
                                                                      labels=tf.ones_like(logits_fake)))
     g_loss2 = tf.reduce_mean(tf.nn.l2_loss(feature_real - feature_fake)) / (self.image_size * self.image_size)
-    g_loss = g_loss1 + g_loss2
+    g_loss3 = 0
+    for layer_name in style_features_fake:
+      # param
+      _, height, width, dim = style_features_fake[layer_name].get_shape()
+      N = height.value * width.value
+      M = dim.value
+      w = 1 / len(style_features_fake)
+      #
+      gram_fake = self.gram_matrix(style_features_fake[layer_name])
+      gram_real = self.gram_matrix(style_features_real[layer_name])
+      g_loss3 += w * (1. / (4 * N ** 2 * M ** 2)) * tf.reduce_sum(tf.pow((gram_fake - gram_real), 2))
+
+    g_loss = g_loss1 + 0.1 * g_loss2 + 10 * g_loss3
 
     # optimizer of generator
     g_vars = net_g.all_params
@@ -205,3 +218,10 @@ class MartaGan:
 
   def generate_image(self, num):
     pass
+
+  def gram_matrix(self, tensor):
+    shape = tensor.get_shape()
+    num_channels = int(shape[3])
+    matrix = tf.reshape(tensor, shape=[-1, num_channels])
+    gram = tf.matmul(tf.transpose(matrix), matrix)
+    return gram
