@@ -41,43 +41,43 @@ class MartaGan:
     #####################
     # for fake images
     #####################
+    self.input_latent_code = tf.placeholder(tf.float32, [self.batch_size, 1], name='input_latent_code')
     # random noise for generator
-    self.input_noise = tf.placeholder(tf.float32, [self.batch_size, self.input_noise_dim], name='input_z')
+    self.input_noise = tf.placeholder(tf.float32, [self.batch_size, self.input_noise_dim - 1], name='input_noise')
+    # input z
+    self.input_z = tf.concat([self.input_latent_code, self.input_noise], axis=1)
     # the fake dataset of generating
-    self.net_g = MartaGanBasicNetWork.generator(input_data=self.input_noise, image_size=self.image_size, is_train=True,
+    self.net_g = MartaGanBasicNetWork.generator(input_data=self.input_z, image_size=self.image_size, is_train=True,
                                                 reuse=False)
     # feature of fake images
-    self.net_feature_extract_fake, self.logits_fake, self.feature_fake, self.style_features_fake = MartaGanBasicNetWork.feature_extract_layer(
-      input_data=self.net_g.outputs,
-      is_train=True,
-      reuse=False)
-
+    self.net_feature_extract_fake, self.logits_fake, self.feature_fake, self.style_features_fake, self.latent_code_fake \
+      = MartaGanBasicNetWork.feature_extract_layer(input_data=self.net_g.outputs,
+                                                   is_train=True,
+                                                   reuse=False)
     #####################
     # for real images
     #####################
     # real image placeholder (the dataset will feed from dataset)
-    self.real_images = tf.placeholder(tf.float32, [self.batch_size, self.image_size, self.image_size, self.image_dim],
+    self.real_images = tf.placeholder(tf.float32,
+                                      [self.batch_size, self.image_size, self.image_size, self.image_dim],
                                       name='real_images')
     # feature of real images
-    self.net_feature_extract_real, self.logits_real, self.feature_real, self.style_features_real = MartaGanBasicNetWork.feature_extract_layer(
-      input_data=self.real_images,
-      is_train=True,
-      reuse=True)
-
+    self.net_feature_extract_real, self.logits_real, self.feature_real, self.style_features_real, self.latent_code_real \
+      = MartaGanBasicNetWork.feature_extract_layer(input_data=self.real_images,
+                                                   is_train=True,
+                                                   reuse=True)
     #####################
     # sample
     #####################
-    self.sample_image = self.sampler(self.input_noise)
+    self.sample_image = self.sampler(self.input_z)
 
     #####################
     # loss and optimizer
     #####################
-    self.g_loss, self.g_optimizer = self.generator(self.net_g, self.logits_fake, self.feature_real, self.feature_fake,
-                                                   self.style_features_fake, self.style_features_real)
-    self.d_loss, self.d_optimizer = self.discriminator(self.net_feature_extract_fake, self.logits_real,
-                                                       self.logits_fake)
+    self.g_loss, self.g_optimizer = self.generator()
+    self.d_loss, self.d_optimizer = self.discriminator()
 
-  def load_parma(self, sess, net_g, net_d, load_epoch):
+  def load_param(self, sess, net_g, net_d, load_epoch):
     try:
       g_vars_name = "./checkpoint/g_vars_{}.npz".format(str(load_epoch))
       d_vars_name = "./checkpoint/d_vars_{}.npz".format(str(load_epoch))
@@ -96,51 +96,57 @@ class MartaGan:
       # get dataset files path
       data_files = glob(os.path.join(self.dataset_path, "*.jpg"))
       # load param
-      self.load_parma(sess, self.net_g, self.net_feature_extract_fake, load_epoch)
-      # static_input_noise
-      static_input_noise = np.random.uniform(low=-1, high=1, size=(self.batch_size, self.input_noise_dim)).astype(
-        np.float32)
+      self.load_param(sess, self.net_g, self.net_feature_extract_fake, load_epoch)
+      # start training
       for cur_epoch in range(load_epoch + 1, epoch):
         # every epoch shuffle data_files
         shuffle(data_files)
         # get total batch
         total_batch = int(len(data_files) / self.batch_size)
         for cur_batch in range(total_batch):
+          # random init a latent code for fake image generate
+          input_latent_code = np.random.randint(0, 21, size=(self.batch_size, 1)).astype(np.float32)
           # every batch get a random input noise
-          input_noise = np.random.uniform(low=-1, high=1, size=(self.batch_size, self.input_noise_dim)).astype(
+          input_noise = np.random.uniform(low=-1, high=1, size=(self.batch_size, self.input_noise_dim - 1)).astype(
             np.float32)
           # get one batch of real images
           batch_files = data_files[cur_batch * self.batch_size:(cur_batch + 1) * self.batch_size]
-          batch_images = [Utils.get_image(batch_file, self.image_size, resize_w=self.image_size,
-                                          is_grayscale=0) for batch_file in batch_files]
+          batch_images = [Utils.get_image(batch_file, self.image_size, resize_w=self.image_size, is_grayscale=0) for
+                          batch_file in batch_files]
           batch_real_images = np.array(batch_images).astype(np.float32)
 
           start_time = time.time()
-
           # train d
           d_loss, _ = sess.run([self.d_loss, self.d_optimizer],
-                               feed_dict={self.input_noise: input_noise, self.real_images: batch_real_images})
-
+                               feed_dict={self.input_latent_code: input_latent_code,
+                                          self.input_noise: input_noise,
+                                          self.real_images: batch_real_images})
           # train g
           for _ in range(2):
             g_loss, _ = sess.run([self.g_loss, self.g_optimizer],
-                                 feed_dict={self.input_noise: input_noise, self.real_images: batch_real_images})
-
+                                 feed_dict={self.input_noise: input_noise,
+                                            self.input_latent_code: input_latent_code,
+                                            self.real_images: batch_real_images})
           end_time = time.time()
 
           logging.info("epoch:[%4d/%4d], batch:[%4d/%4d], d_loss: %.8f, g_loss: %.8f, time: %4f",
                        cur_epoch, epoch, cur_batch + 1, total_batch, d_loss, g_loss, end_time - start_time)
 
         if cur_epoch % 1 == 0:
+          input_latent_code = np.random.randint(0, 21, size=(self.batch_size, 1)).astype(np.float32)
+          input_noise = np.random.uniform(low=-1, high=1, size=(self.batch_size, self.input_noise_dim - 1)).astype(
+            np.float32)
           # save images
-          for sample_image_num in range(1):
-            images = sess.run(self.sample_image, feed_dict={self.input_noise: static_input_noise,
+          for sample_image_num in range(5):
+            images = sess.run(self.sample_image, feed_dict={self.input_noise: input_noise,
+                                                            self.input_latent_code: input_latent_code,
                                                             self.real_images: batch_real_images})
             # save images
             side = 1
             while side * side < self.batch_size:
               side += 1
-            Utils.save_images(images, [side, side],
+            Utils.save_images(images,
+                              [side, side],
                               os.path.join(self.sample_path,
                                            "epoch{}-sample{}.png".format(str(cur_epoch), str(sample_image_num))))
           logging.info("sample image saved!")
@@ -155,7 +161,7 @@ class MartaGan:
           tl.files.save_npz(d_vars, name=d_vars_name, sess=sess)
           logging.info("net param saved!")
 
-  def generator(self, net_g, logits_fake, feature_real, feature_fake, style_features_fake, style_features_real):
+  def generator(self):
     """
     the generator should gen image that is smiler with real image
 
@@ -165,44 +171,48 @@ class MartaGan:
 
     """
     # loss of generator
-    g_loss1 = tf.reduce_mean(tf.nn.sigmoid_cross_entropy_with_logits(logits=logits_fake,
-                                                                     labels=tf.ones_like(logits_fake)))
-    g_loss2 = tf.reduce_mean(tf.nn.l2_loss(feature_real - feature_fake)) / (self.image_size * self.image_size)
+    g_loss1 = tf.reduce_mean(tf.nn.sigmoid_cross_entropy_with_logits(logits=self.logits_fake,
+                                                                     labels=tf.ones_like(self.logits_fake)))
+    g_loss2 = tf.reduce_mean(tf.nn.l2_loss(self.feature_real - self.feature_fake)) / (self.image_size * self.image_size)
     g_loss3 = 0
-    for layer_name in style_features_fake:
+    for layer_name in self.style_features_fake:
       # param
-      _, height, width, dim = style_features_fake[layer_name].get_shape()
+      _, height, width, dim = self.style_features_fake[layer_name].get_shape()
       N = height.value * width.value
       M = dim.value
-      w = 1 / len(style_features_fake)
+      w = 1 / len(self.style_features_fake)
       #
-      gram_fake = self.gram_matrix(style_features_fake[layer_name])
-      gram_real = self.gram_matrix(style_features_real[layer_name])
+      gram_fake = self.gram_matrix(self.style_features_fake[layer_name])
+      gram_real = self.gram_matrix(self.style_features_real[layer_name])
       g_loss3 += w * (1. / (4 * N ** 2 * M ** 2)) * tf.reduce_sum(tf.pow((gram_fake - gram_real), 2))
 
-    g_loss = g_loss1 + 0.1 * g_loss2 + 10 * g_loss3
+    g_loss4 = tf.reduce_mean(tf.nn.sigmoid_cross_entropy_with_logits(logits=self.latent_code_fake,
+                                                                     labels=self.input_latent_code))
+    g_loss = g_loss1 + 0.1 * g_loss2 + 10 * g_loss3 + 0 * g_loss4
 
     # optimizer of generator
-    g_vars = net_g.all_params
+    g_vars = self.net_g.all_params
     # self.net_g.print_params(False)
     g_optimizer = tf.train.AdamOptimizer(self.learning_rate, beta1=self.beta1).minimize(g_loss, var_list=g_vars)
 
     return g_loss, g_optimizer
 
-  def discriminator(self, net_feature_extract_fake, logits_real, logits_fake):
+  def discriminator(self):
     """
     the discriminator should marked real image as 1 and mark fake image as 0
 
     """
     # loss of discriminator
     d_loss_real = tf.reduce_mean(
-      tf.nn.sigmoid_cross_entropy_with_logits(logits=logits_real, labels=tf.ones_like(logits_real)))  # real == 1
+      tf.nn.sigmoid_cross_entropy_with_logits(logits=self.logits_real,
+                                              labels=tf.ones_like(self.logits_real)))  # real == 1
     d_loss_fake = tf.reduce_mean(
-      tf.nn.sigmoid_cross_entropy_with_logits(logits=logits_fake, labels=tf.zeros_like(logits_fake)))  # fake == 0
+      tf.nn.sigmoid_cross_entropy_with_logits(logits=self.logits_fake,
+                                              labels=tf.zeros_like(self.logits_fake)))  # fake == 0
     d_loss = d_loss_real + d_loss_fake
 
     # optimizer of discriminator
-    d_vars = net_feature_extract_fake.all_params
+    d_vars = self.net_feature_extract_fake.all_params
     d_optimizer = tf.train.AdamOptimizer(self.learning_rate, beta1=self.beta1).minimize(d_loss, var_list=d_vars)
 
     return d_loss, d_optimizer

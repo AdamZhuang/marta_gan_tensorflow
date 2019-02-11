@@ -113,19 +113,22 @@ class MartaGanBasicNetWork:
 
       # multi-feature
       feature = ConcatLayer([global_max1, global_max2, global_max3], name='d/concat_layer1')
-
+      # dense layer
       net_h6 = DenseLayer(prev_layer=feature, n_units=1, act=tf.identity, W_init=w_init, name='d/h6/lin_sigmoid')
-
+      # origin output (tensor)
       logits = net_h6.outputs
-
+      # output net (tensorlayer)
       net_h6.outputs = tf.nn.sigmoid(net_h6.outputs)
-
+      # style features
       style_features = {
-        "net_h1":net_h1.outputs,
-        "net_h2":net_h2.outputs,
-        "net_h3":net_h3.outputs,
-        "net_h4":net_h4.outputs,
-        "net_h5":net_h5.outputs,
+        "net_h1": net_h1.outputs,
+        "net_h2": net_h2.outputs,
+        "net_h3": net_h3.outputs,
+        "net_h4": net_h4.outputs,
+        "net_h5": net_h5.outputs,
       }
+      # latent code layer
+      latent_code_layer_output = DenseLayer(prev_layer=feature, n_units=1, act=tf.identity, W_init=w_init,
+                                            name='d/latent_code_layer').outputs
 
-    return net_h6, logits, feature.outputs, style_features
+    return net_h6, logits, feature.outputs, style_features, latent_code_layer_output
