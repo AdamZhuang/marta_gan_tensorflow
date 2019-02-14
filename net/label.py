@@ -1,7 +1,9 @@
 from enum import Enum
+from utils.noise_utils import *
 
 
 class Label(Enum):
+  mobilehomepark = 0
   intersection = 1
   runway = 2
   river = 3
@@ -22,10 +24,10 @@ class Label(Enum):
   sparseresidential = 18
   storagetanks = 19
   parkinglot = 20
-  mobilehomepark = 21
 
 
-
+if __name__ == '__main__':
+  pass
 
 # if __name__ == '__main__':
 #   date_files = glob(os.path.join("../dataset/uc_test_256", "*.jpg"))

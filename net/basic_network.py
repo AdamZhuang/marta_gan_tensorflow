@@ -128,7 +128,8 @@ class MartaGanBasicNetWork:
         "net_h5": net_h5.outputs,
       }
       # latent code layer
-      latent_code_layer_output = DenseLayer(prev_layer=feature, n_units=1, act=tf.identity, W_init=w_init,
-                                            name='d/latent_code_layer').outputs
+      latent_code_layer = DenseLayer(prev_layer=feature, n_units=21, act=tf.identity, W_init=w_init,
+                                     name='d/latent_code_layer')
+      latent_code_layer_output = tf.nn.softmax(latent_code_layer.outputs)
 
     return net_h6, logits, feature.outputs, style_features, latent_code_layer_output
