@@ -19,7 +19,7 @@ class MartaGan:
                sample_path="./sample",
                image_size=256,
                image_dim=3,
-               input_noise_dim=100,
+               input_noise_dim=50,
                learning_rate=0.0001,
                beta1=0.5,
                batch_size=64):
@@ -42,18 +42,19 @@ class MartaGan:
     # for fake images
     #####################
     # latent code for generate
-    self.input_latent_code = tf.placeholder(tf.float32, [self.batch_size, 21], name='input_latent_code')
-    # latent code from files
-    self.latent_code_of_real_data = tf.placeholder(tf.float32, [self.batch_size, 21], name='input_latent_code')
+    self.input_latent_code_1 = tf.placeholder(tf.float32, [self.batch_size, 21], name='input_latent_code_1')
+    self.input_latent_code_2 = tf.placeholder(tf.float32, [self.batch_size, 1], name='input_latent_code_2')
+    self.input_latent_code_3 = tf.placeholder(tf.float32, [self.batch_size, 1], name='input_latent_code_3')
     # random noise for generator
-    self.input_noise = tf.placeholder(tf.float32, [self.batch_size, self.input_noise_dim - 21], name='input_noise')
+    self.input_noise = tf.placeholder(tf.float32, [self.batch_size, self.input_noise_dim - 23], name='input_noise')
     # input z
-    self.input_z = tf.concat([self.input_latent_code, self.input_noise], axis=1)
+    self.input_z = tf.concat(
+      [self.input_latent_code_1, self.input_latent_code_2, self.input_latent_code_3, self.input_noise], axis=1)
     # the fake dataset of generating
     self.net_g = MartaGanBasicNetWork.generator(input_data=self.input_z, image_size=self.image_size, is_train=True,
                                                 reuse=False)
     # feature of fake images
-    self.net_feature_extract_fake, self.logits_fake, self.feature_fake, self.style_features_fake, self.latent_code_fake \
+    self.net_d_output_fake, self.logits_fake, self.style_features_fake, self.latent_code_layer_1_fake, self.latent_code_layer_2_fake, self.latent_code_layer_3_fake \
       = MartaGanBasicNetWork.feature_extract_layer(input_data=self.net_g.outputs,
                                                    is_train=True,
                                                    reuse=False)
@@ -65,7 +66,7 @@ class MartaGan:
                                       [self.batch_size, self.image_size, self.image_size, self.image_dim],
                                       name='real_images')
     # feature of real images
-    self.net_feature_extract_real, self.logits_real, self.feature_real, self.style_features_real, self.latent_code_real \
+    self.net_d_output_real, self.logits_real, self.style_features_real, _, _, _ \
       = MartaGanBasicNetWork.feature_extract_layer(input_data=self.real_images,
                                                    is_train=True,
                                                    reuse=True)
@@ -99,7 +100,7 @@ class MartaGan:
       # get dataset files path
       data_files = glob(os.path.join(self.dataset_path, "*.jpg"))
       # load param
-      self.load_param(sess, self.net_g, self.net_feature_extract_fake, load_epoch)
+      self.load_param(sess, self.net_g, self.net_d_output_fake, load_epoch)
       # start training
       for cur_epoch in range(load_epoch + 1, epoch):
         # every epoch shuffle data_files
@@ -112,28 +113,29 @@ class MartaGan:
           batch_images = [Utils.get_image(batch_file, self.image_size, resize_w=self.image_size, is_grayscale=0) for
                           batch_file in batch_files]
           batch_real_images = np.array(batch_images).astype(np.float32)
-          # latent code of real data
-          latent_code_of_real_data = get_one_hot_from_data_files_name(batch_size=self.batch_size, class_num=21, data_files=batch_files)
           # random init a latent code for fake image generate
-          input_latent_code = get_random_one_hot(self.batch_size, 21)
+          input_latent_code_1 = get_random_one_hot(self.batch_size, 21)
+          input_latent_code_2 = get_continuous_code(self.batch_size)
+          input_latent_code_3 = get_continuous_code(self.batch_size)
           # every batch get a random input noise
-          input_noise = np.random.uniform(low=-1, high=1, size=(self.batch_size, self.input_noise_dim - 21)).astype(
+          input_noise = np.random.uniform(low=-1, high=1, size=(self.batch_size, self.input_noise_dim - 21 - 1 - 1)).astype(
             np.float32)
-
-
 
           start_time = time.time()
           # train d
           d_loss, _ = sess.run([self.d_loss, self.d_optimizer],
-                               feed_dict={self.input_latent_code: input_latent_code,
+                               feed_dict={self.input_latent_code_1: input_latent_code_1,
+                                          self.input_latent_code_2: input_latent_code_2,
+                                          self.input_latent_code_3: input_latent_code_3,
                                           self.input_noise: input_noise,
                                           self.real_images: batch_real_images})
           # train g
           for _ in range(2):
             g_loss, _ = sess.run([self.g_loss, self.g_optimizer],
                                  feed_dict={self.input_noise: input_noise,
-                                            self.input_latent_code: input_latent_code,
-                                            self.latent_code_of_real_data: latent_code_of_real_data,
+                                            self.input_latent_code_1: input_latent_code_1,
+                                            self.input_latent_code_2: input_latent_code_2,
+                                            self.input_latent_code_3: input_latent_code_3,
                                             self.real_images: batch_real_images})
           end_time = time.time()
 
@@ -143,11 +145,15 @@ class MartaGan:
         if cur_epoch % 2 == 0:
           # save images
           for sample_image_num in range(3):
-            input_latent_code = get_one_hot(self.batch_size, 21, sample_image_num)
-            input_noise = np.random.uniform(low=-1, high=1, size=(self.batch_size, self.input_noise_dim - 21)).astype(
+            input_latent_code_1 = get_one_hot_by_index(self.batch_size, 21, sample_image_num)
+            input_latent_code_2 = get_continuous_code(self.batch_size)
+            input_latent_code_3 = get_continuous_code(self.batch_size)
+            input_noise = np.random.uniform(low=-1, high=1, size=(self.batch_size, self.input_noise_dim - 21 - 1 - 1)).astype(
               np.float32)
             images = sess.run(self.sample_image, feed_dict={self.input_noise: input_noise,
-                                                            self.input_latent_code: input_latent_code,
+                                                            self.input_latent_code_1: input_latent_code_1,
+                                                            self.input_latent_code_1: input_latent_code_2,
+                                                            self.input_latent_code_1: input_latent_code_3,
                                                             self.real_images: batch_real_images})
             # save images
             side = 1
@@ -181,8 +187,7 @@ class MartaGan:
     # loss of generator
     g_loss1 = tf.reduce_mean(tf.nn.sigmoid_cross_entropy_with_logits(logits=self.logits_fake,
                                                                      labels=tf.ones_like(self.logits_fake)))
-    g_loss2 = tf.reduce_mean(tf.nn.l2_loss(self.feature_real - self.feature_fake)) / (self.image_size * self.image_size)
-    g_loss3 = 0
+    g_loss2 = 0
     for layer_name in self.style_features_fake:
       # param
       _, height, width, dim = self.style_features_fake[layer_name].get_shape()
@@ -192,13 +197,20 @@ class MartaGan:
       #
       gram_fake = self.gram_matrix(self.style_features_fake[layer_name])
       gram_real = self.gram_matrix(self.style_features_real[layer_name])
-      g_loss3 += w * (1. / (4 * N ** 2 * M ** 2)) * tf.reduce_sum(tf.pow((gram_fake - gram_real), 2))
-
-    g_loss4 = tf.reduce_mean(tf.nn.sigmoid_cross_entropy_with_logits(logits=self.latent_code_fake,
-                                                                     labels=self.input_latent_code))
-    g_loss5 = tf.reduce_mean(tf.reduce_max(tf.multiply(self.input_latent_code, self.latent_code_fake), axis=1))
-    g_loss6 = tf.reduce_mean(tf.reduce_max(tf.multiply(self.latent_code_of_real_data, self.latent_code_real), axis=1))
-    g_loss = 1 * g_loss1 + 0.1 * g_loss2 + 10 * g_loss3 + 0 * g_loss4 - 0 * g_loss5 - 0 * g_loss6
+      g_loss2 += w * (1. / (4 * N ** 2 * M ** 2)) * tf.reduce_sum(tf.pow((gram_fake - gram_real), 2))
+    # g_loss_q_1 = tf.reduce_mean(tf.nn.sigmoid_cross_entropy_with_logits(logits=self.latent_code_layer_1_fake,
+    #                                                                  labels=self.input_latent_code_1))
+    # g_loss_q_2 = tf.reduce_mean(tf.nn.sigmoid_cross_entropy_with_logits(logits=self.latent_code_layer_2_fake,
+    #                                                                  labels=self.input_latent_code_1))
+    # g_loss_q_3 = tf.reduce_mean(tf.nn.sigmoid_cross_entropy_with_logits(logits=self.latent_code_layer_3_fake,
+    #                                                                     labels=self.input_latent_code_1))
+    g_loss_q_1 = tf.reduce_mean(tf.multiply(self.latent_code_layer_1_fake, self.input_latent_code_1), axis=1)
+    g_loss_q_2 = tf.reduce_mean(tf.multiply(self.latent_code_layer_2_fake, self.input_latent_code_2), axis=1)
+    g_loss_q_3 = tf.reduce_mean(tf.multiply(self.latent_code_layer_3_fake, self.input_latent_code_3), axis=1)
+    logging.info("g_loss1:" + str(g_loss1))
+    logging.info("g_loss2:" + str(g_loss2))
+    logging.info("g_loss3:" + str((g_loss_q_1 + g_loss_q_2 + g_loss_q_3)))
+    g_loss = 1 * g_loss1 + 1 * g_loss2 - 1 * (g_loss_q_1 + g_loss_q_2 + g_loss_q_3)
 
     # optimizer of generator
     g_vars = self.net_g.all_params
@@ -222,7 +234,7 @@ class MartaGan:
     d_loss = d_loss_real + d_loss_fake
 
     # optimizer of discriminator
-    d_vars = self.net_feature_extract_fake.all_params
+    d_vars = self.net_d_output_real.all_params
     d_optimizer = tf.train.AdamOptimizer(self.learning_rate, beta1=self.beta1).minimize(d_loss, var_list=d_vars)
 
     return d_loss, d_optimizer
@@ -240,11 +252,11 @@ class MartaGan:
     with tf.Session() as sess:
       self.load_param(sess, self.net_g, self.net_feature_extract_fake, load_epoch)
       for sample_image_num in range(3):
-        input_latent_code = get_one_hot(self.batch_size, 21, sample_image_num)
+        input_latent_code = get_one_hot_by_index(self.batch_size, 21, sample_image_num)
         input_noise = np.random.uniform(low=-1, high=1, size=(self.batch_size, self.input_noise_dim - 21)).astype(
           np.float32)
         images = sess.run(self.sample_image, feed_dict={self.input_noise: input_noise,
-                                                        self.input_latent_code: input_latent_code
+                                                        self.input_latent_code_1: input_latent_code
                                                         })
         # save images
         side = 1
@@ -255,7 +267,6 @@ class MartaGan:
                           os.path.join(self.sample_path,
                                        "gen/gen-epoch{}-sample{}.png".format(str(load_epoch), str(sample_image_num))))
       logging.info("sample image saved!")
-
 
   def gram_matrix(self, tensor):
     shape = tensor.get_shape()
