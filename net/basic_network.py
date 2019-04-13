@@ -105,14 +105,14 @@ class MartaGanBasicNetWork:
       net_h5 = BatchNormLayer(prev_layer=net_h5, act=lambda x: tl.act.lrelu(x, 0.2), is_train=is_train,
                               gamma_init=gamma_init, name='d/h5/batch_norm')
 
-      # global_max1 = MaxPool2d(prev_layer=net_h3, filter_size=(4, 4), strides=None, padding='SAME', name='maxpool1')
-      # global_max1 = FlattenLayer(prev_layer=global_max1, name='d/h3/flatten')
-      # global_max2 = MaxPool2d(prev_layer=net_h4, filter_size=(2, 2), strides=None, padding='SAME', name='maxpool2')
-      # global_max2 = FlattenLayer(prev_layer=global_max2, name='d/h4/flatten')
+      global_max1 = MaxPool2d(prev_layer=net_h3, filter_size=(4, 4), strides=None, padding='SAME', name='maxpool1')
+      global_max1 = FlattenLayer(prev_layer=global_max1, name='d/h3/flatten')
+      global_max2 = MaxPool2d(prev_layer=net_h4, filter_size=(2, 2), strides=None, padding='SAME', name='maxpool2')
+      global_max2 = FlattenLayer(prev_layer=global_max2, name='d/h4/flatten')
       global_max3 = FlattenLayer(prev_layer=net_h5, name='d/h5/flatten')
 
       # multi-feature
-      feature = ConcatLayer([global_max3], name='d/concat_layer1')
+      feature = ConcatLayer([global_max1, global_max2, global_max3], name='d/concat_layer1')
       # dense layer
       net_h6 = DenseLayer(prev_layer=feature, n_units=1, act=tf.identity, W_init=w_init, name='d/h6/lin_sigmoid')
       # origin output (tensor)
@@ -135,4 +135,4 @@ class MartaGanBasicNetWork:
       latent_code_layer_3 = DenseLayer(prev_layer=feature, n_units=21, act=tf.identity, W_init=w_init, name='d/latent_code_layer_3')
       latent_code_layer_3 = tf.nn.softmax(latent_code_layer_3.outputs)
 
-    return net_h6, logits, style_features, latent_code_layer_1, latent_code_layer_2, latent_code_layer_3
+    return net_h6, logits, feature.outputs, style_features, latent_code_layer_1, latent_code_layer_2, latent_code_layer_3

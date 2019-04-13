@@ -35,9 +35,22 @@ def get_one_hot_by_index(batch_size, class_num, class_index):
     array[i][j] = 1.0
   return array
 
+def get_regular_one_hot(batch_size, class_num):
+  array = np.zeros((batch_size, class_num))
+  j = 0
+  num = 0
+  for i in range(batch_size):
+    array[i][j] = 1.0
+    num += 1
+    if num == 6:
+      j += 1
+      j = j % class_num
+      num = 0
+  return array
+
 
 if __name__ == '__main__':
-  a = get_continuous_code(64)
+  a = get_regular_one_hot(64, 21)
   print(a)
   # a = re.sub(re.compile(r'[a-zA-Z0-9]{0,9}_'), "", 'rot90_harbor')
   # data_files = glob(os.path.join("../dataset/uc_train_256_data", "*.jpg"))

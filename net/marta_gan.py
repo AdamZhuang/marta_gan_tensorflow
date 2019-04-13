@@ -54,7 +54,7 @@ class MartaGan:
     self.net_g = MartaGanBasicNetWork.generator(input_data=self.input_z, image_size=self.image_size, is_train=True,
                                                 reuse=False)
     # feature of fake images
-    self.net_d_output_fake, self.logits_fake, self.style_features_fake, self.latent_code_layer_1_fake, self.latent_code_layer_2_fake, self.latent_code_layer_3_fake \
+    self.net_d_output_fake, self.logits_fake, self.feature_fake, self.style_features_fake, self.latent_code_layer_1_fake, self.latent_code_layer_2_fake, self.latent_code_layer_3_fake \
       = MartaGanBasicNetWork.feature_extract_layer(input_data=self.net_g.outputs,
                                                    is_train=True,
                                                    reuse=False)
@@ -66,7 +66,7 @@ class MartaGan:
                                       [self.batch_size, self.image_size, self.image_size, self.image_dim],
                                       name='real_images')
     # feature of real images
-    self.net_d_output_real, self.logits_real, self.style_features_real, _, _, _ \
+    self.net_d_output_real, self.logits_real, self.feature_real, self.style_features_real, _, _, _ \
       = MartaGanBasicNetWork.feature_extract_layer(input_data=self.real_images,
                                                    is_train=True,
                                                    reuse=True)
@@ -144,16 +144,16 @@ class MartaGan:
 
         if cur_epoch % 2 == 0:
           # save images
-          for sample_image_num in range(3):
-            input_latent_code_1 = get_one_hot_by_index(self.batch_size, 21, sample_image_num)
+          for sample_image_num in range(5):
+            input_latent_code_1 = get_regular_one_hot(self.batch_size, 21)
             input_latent_code_2 = get_continuous_code(self.batch_size)
             input_latent_code_3 = get_continuous_code(self.batch_size)
             input_noise = np.random.uniform(low=-1, high=1, size=(self.batch_size, self.input_noise_dim - 21 - 1 - 1)).astype(
               np.float32)
             images = sess.run(self.sample_image, feed_dict={self.input_noise: input_noise,
                                                             self.input_latent_code_1: input_latent_code_1,
-                                                            self.input_latent_code_1: input_latent_code_2,
-                                                            self.input_latent_code_1: input_latent_code_3,
+                                                            self.input_latent_code_2: input_latent_code_2,
+                                                            self.input_latent_code_3: input_latent_code_3,
                                                             self.real_images: batch_real_images})
             # save images
             side = 1
@@ -168,7 +168,7 @@ class MartaGan:
         if cur_epoch % 10 == 0:
           # save net param
           g_vars = self.net_g.all_params
-          d_vars = self.net_feature_extract_fake.all_params
+          d_vars = self.net_d_output_fake.all_params
           g_vars_name = os.path.join(self.checkpoint_path, "g_vars_{}.npz".format(str(cur_epoch)))
           d_vars_name = os.path.join(self.checkpoint_path, "d_vars_{}.npz".format(str(cur_epoch)))
           tl.files.save_npz(g_vars, name=g_vars_name, sess=sess)
@@ -187,7 +187,8 @@ class MartaGan:
     # loss of generator
     g_loss1 = tf.reduce_mean(tf.nn.sigmoid_cross_entropy_with_logits(logits=self.logits_fake,
                                                                      labels=tf.ones_like(self.logits_fake)))
-    g_loss2 = 0
+    g_loss2 = tf.reduce_mean(tf.nn.l2_loss(self.feature_real - self.feature_fake)) / (self.image_size * self.image_size)
+    g_loss3 = 0
     for layer_name in self.style_features_fake:
       # param
       _, height, width, dim = self.style_features_fake[layer_name].get_shape()
@@ -197,20 +198,28 @@ class MartaGan:
       #
       gram_fake = self.gram_matrix(self.style_features_fake[layer_name])
       gram_real = self.gram_matrix(self.style_features_real[layer_name])
-      g_loss2 += w * (1. / (4 * N ** 2 * M ** 2)) * tf.reduce_sum(tf.pow((gram_fake - gram_real), 2))
+      g_loss3 += w * (1. / (4 * N ** 2 * M ** 2)) * tf.reduce_sum(tf.pow((gram_fake - gram_real), 2))
     # g_loss_q_1 = tf.reduce_mean(tf.nn.sigmoid_cross_entropy_with_logits(logits=self.latent_code_layer_1_fake,
     #                                                                  labels=self.input_latent_code_1))
     # g_loss_q_2 = tf.reduce_mean(tf.nn.sigmoid_cross_entropy_with_logits(logits=self.latent_code_layer_2_fake,
     #                                                                  labels=self.input_latent_code_1))
     # g_loss_q_3 = tf.reduce_mean(tf.nn.sigmoid_cross_entropy_with_logits(logits=self.latent_code_layer_3_fake,
     #                                                                     labels=self.input_latent_code_1))
-    g_loss_q_1 = tf.reduce_mean(tf.multiply(self.latent_code_layer_1_fake, self.input_latent_code_1), axis=1)
-    g_loss_q_2 = tf.reduce_mean(tf.multiply(self.latent_code_layer_2_fake, self.input_latent_code_2), axis=1)
-    g_loss_q_3 = tf.reduce_mean(tf.multiply(self.latent_code_layer_3_fake, self.input_latent_code_3), axis=1)
-    logging.info("g_loss1:" + str(g_loss1))
-    logging.info("g_loss2:" + str(g_loss2))
-    logging.info("g_loss3:" + str((g_loss_q_1 + g_loss_q_2 + g_loss_q_3)))
-    g_loss = 1 * g_loss1 + 1 * g_loss2 - 1 * (g_loss_q_1 + g_loss_q_2 + g_loss_q_3)
+    g_loss_q_1 = tf.reduce_mean(tf.reduce_mean(tf.multiply(self.latent_code_layer_1_fake, self.input_latent_code_1), axis=1))
+    g_loss_q_2 = tf.reduce_mean(tf.reduce_mean(tf.multiply(self.latent_code_layer_2_fake, self.input_latent_code_2), axis=1))
+    g_loss_q_3 = tf.reduce_mean(tf.reduce_mean(tf.multiply(self.latent_code_layer_3_fake, self.input_latent_code_3), axis=1))
+
+    # g_loss = g_loss_q_1
+    # g_loss = 1 * g_loss1 + 0.2 * g_loss2 + 1 * g_loss3 - 5 * g_loss_q_1 - 2 * g_loss_q_2 - 1 * g_loss_q_3
+    # g_loss = 1 * g_loss1 + 0.2 * g_loss2 + 1 * g_loss3 - 5 * g_loss_q_1 - 2 * g_loss_q_2 - 1 * g_loss_q_3
+
+    # 1
+    # g_loss = 1 * g_loss1 + 0.2 * g_loss2 + 1 * g_loss3 - 5 * g_loss_q_1 - 2 * g_loss_q_2 - 1 * g_loss_q_3
+    # 2
+    # g_loss = 1 * g_loss1 + 0.2 * g_loss2 + 10 * g_loss3 - 50 * g_loss_q_1 - 10 * g_loss_q_2 - 1 * g_loss_q_3
+    # 3
+    # g_loss = 1 * g_loss1 + 0.1 * g_loss2 + 1 * g_loss3 - 100 * g_loss_q_1 - 20 * g_loss_q_2 - 10 * g_loss_q_3
+    g_loss = 1 * g_loss1 + 0.1 * g_loss2 + 50 * g_loss3 - 10 * g_loss_q_1 - 0 * g_loss_q_2 - 0 * g_loss_q_3
 
     # optimizer of generator
     g_vars = self.net_g.all_params
