@@ -13,5 +13,5 @@ if __name__ == '__main__':
     train_image_label_dict[file_name] = LabelUtils.get_label_num(file_name)
 
 
-  marta_gan = MartaGan(learning_rate=0.0005)
+  marta_gan = MartaGan(learning_rate=0.001)
   marta_gan.train(train_image_label_dict, epoch=10000, load_epoch=0)

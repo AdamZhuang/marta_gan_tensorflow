@@ -148,7 +148,6 @@ class MartaGan:
             while side * side < batch_size:
               side += 1
 
-            print(images.shape)
             data_utils.save_image(images,
                                   side,
                                   side,
@@ -220,7 +219,7 @@ class MartaGan:
     d_loss_pair_real = -tf.reduce_mean(tf.sigmoid(output_pair_confidence_real.outputs))
     d_loss2 = d_loss_pair_fake + d_loss_pair_real
 
-    d_loss = d_loss1 + d_loss2
+    d_loss = d_loss2
 
     # optimizer of discriminator
     d_vars = tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES, scope="discriminator")
