@@ -63,7 +63,7 @@ class MartaGanBasicNetWork:
     return net_h6
 
   @staticmethod
-  def feature_extract_layer(input_data, is_train=True, reuse=False):
+  def discriminator(input_img, class_num, is_train=True, reuse=False):
     # filter size
     k = 5
     # n_filter
@@ -75,7 +75,7 @@ class MartaGanBasicNetWork:
 
     # build network
     with tf.variable_scope("discriminator", reuse=reuse):
-      net_in = InputLayer(input_data, name='d/in')
+      net_in = InputLayer(input_img, name='d/in')
 
       net_h0 = Conv2d(prev_layer=net_in, n_filter=n_filter * 1, filter_size=(k, k), strides=(2, 2),
                       act=lambda x: tf.nn.leaky_relu(x, 0.2), padding='SAME', W_init=w_init, name='d/h0/conv2d')
@@ -111,21 +111,20 @@ class MartaGanBasicNetWork:
       global_max2 = FlattenLayer(prev_layer=global_max2, name='d/h4/flatten')
       global_max3 = FlattenLayer(prev_layer=net_h5, name='d/h5/flatten')
 
-      # multi-feature
+      # multi-feature layer
       feature = ConcatLayer([global_max1, global_max2, global_max3], name='d/concat_layer1')
 
-      net_h6 = DenseLayer(prev_layer=feature, n_units=1, act=tf.identity, W_init=w_init, name='d/h6/lin_sigmoid')
+      output_confidence = DenseLayer(prev_layer=feature, n_units=1, act=tf.identity, W_init=w_init,
+                                     name='d/output_confidence')
 
-      logits = net_h6.outputs
-
-      net_h6.outputs = tf.nn.sigmoid(net_h6.outputs)
+      output_code = DenseLayer(prev_layer=feature, n_units=class_num, act=tf.identity, W_init=w_init, name='d/output_code')
 
       style_features = {
-        "net_h1":net_h1.outputs,
-        "net_h2":net_h2.outputs,
-        "net_h3":net_h3.outputs,
-        "net_h4":net_h4.outputs,
-        "net_h5":net_h5.outputs,
+        "net_h1": net_h1.outputs,
+        "net_h2": net_h2.outputs,
+        "net_h3": net_h3.outputs,
+        "net_h4": net_h4.outputs,
+        "net_h5": net_h5.outputs,
       }
 
-    return net_h6, logits, feature.outputs, style_features
+    return output_confidence, output_code, feature.outputs, style_features

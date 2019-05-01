@@ -2,6 +2,7 @@ from enum import Enum
 
 
 class Label(Enum):
+  mobilehomepark = 0
   intersection = 1
   runway = 2
   river = 3
@@ -22,27 +23,22 @@ class Label(Enum):
   sparseresidential = 18
   storagetanks = 19
   parkinglot = 20
-  mobilehomepark = 21
 
 
+class LabelUtils:
+  @staticmethod
+  def get_label_num(name):
+    for lable in Label:
+      label_name = str(lable).replace("Label.", "")
+      if name.find(label_name) >= 0:
+        return lable.value
+    return -1
 
+  @staticmethod
+  def get_label_name(num):
+    label_name = Label(num)
+    return str(label_name).replace("Label.", "")
 
-# if __name__ == '__main__':
-#   date_files = glob(os.path.join("../dataset/uc_test_256", "*.jpg"))
-#   name_list = []
-#   for data_file in date_files:
-#     temp = data_file.replace("../dataset/uc_test_256/", "")
-#     temp = re.findall(r'(.+?)[0-9]*\.jpg', temp)[0]
-#     name_list.append(temp)
-#
-#   name_set = set(name_list)
-#   with open('classifications.txt', 'w') as f:
-#     count = 1
-#     for name in name_set:
-#       if count == len(name_set) - 1:
-#         print(len(name_set))
-#         f.write(name + " = " + str(count))
-#       else:
-#         f.write(name + " = " + str(count) + "\n")
-#
-#       count += 1
+  @staticmethod
+  def get_total_label_num():
+    return len(Label)
