@@ -34,6 +34,11 @@ def get_one_batch_data(one_batch_file_names, image_label_dict, class_num):
   return batch_data, batch_labels
 
 
-def get_one_batch_data_without_lables(one_batch_file_names):
+def get_one_batch_data_without_labels(one_batch_file_names):
   # data
   return image_utils.read_image(one_batch_file_names)
+
+def get_batch_one_hot(code, batch_size, class_num):
+  code = np.array([code] * batch_size)
+  return np.eye(class_num)[code]
+

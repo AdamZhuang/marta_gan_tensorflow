@@ -8,7 +8,7 @@ class MartaGanBasicNetWork:
     pass
 
   @staticmethod
-  def generator(input_data, image_size, is_train=True, reuse=False):
+  def generator(input_c, input_z, image_size, is_train=True, reuse=False):
     # filter_size
     k = 4
     # n_filter
@@ -20,6 +20,10 @@ class MartaGanBasicNetWork:
 
     # build network
     with tf.variable_scope("generator", reuse=reuse):
+      # c [None, dim_c]  z [None, dim_z]
+      input_data = tf.concat([input_c, input_z], 1)
+
+      # input data [None, dim_c + dim_z]
       net_in = InputLayer(input_data, name='g/in')
 
       net_h0 = DenseLayer(prev_layer=net_in, n_units=n_filter * 32 * int(image_size / 64) * int(image_size / 64),
@@ -63,7 +67,7 @@ class MartaGanBasicNetWork:
     return net_h6
 
   @staticmethod
-  def discriminator(input_img, class_num, is_train=True, reuse=False):
+  def discriminator(input_c, input_x, class_num, is_train=True, reuse=False):
     # filter size
     k = 5
     # n_filter
@@ -75,7 +79,7 @@ class MartaGanBasicNetWork:
 
     # build network
     with tf.variable_scope("discriminator", reuse=reuse):
-      net_in = InputLayer(input_img, name='d/in')
+      net_in = InputLayer(input_x, name='d/in')
 
       net_h0 = Conv2d(prev_layer=net_in, n_filter=n_filter * 1, filter_size=(k, k), strides=(2, 2),
                       act=lambda x: tf.nn.leaky_relu(x, 0.2), padding='SAME', W_init=w_init, name='d/h0/conv2d')
@@ -112,12 +116,20 @@ class MartaGanBasicNetWork:
       global_max3 = FlattenLayer(prev_layer=net_h5, name='d/h5/flatten')
 
       # multi-feature layer
-      feature = ConcatLayer([global_max1, global_max2, global_max3], name='d/concat_layer1')
+      multi_feature_layer = ConcatLayer([global_max1, global_max2, global_max3], name='d/multi_feature_layer')
 
-      output_confidence = DenseLayer(prev_layer=feature, n_units=1, act=tf.identity, W_init=w_init,
+      # to judge a image is real or not
+      output_confidence = DenseLayer(prev_layer=multi_feature_layer, n_units=1, act=tf.identity, W_init=w_init,
                                      name='d/output_confidence')
 
-      output_code = DenseLayer(prev_layer=feature, n_units=class_num, act=tf.identity, W_init=w_init, name='d/output_code')
+
+      # to judge a image is pair to code or not
+      img_embedding = DenseLayer(prev_layer=multi_feature_layer, n_units=class_num, act=tf.identity, W_init=w_init,
+                                name='d/img_embedding')
+      code_embedding = InputLayer(input_c, name='d/code_embedding')
+      pair_layer = ConcatLayer([code_embedding, img_embedding], name='d/pair_layer')
+      output_pair_confidence = DenseLayer(prev_layer=pair_layer, n_units=1, act=tf.identity, W_init=w_init,
+                               name='d/output_pair_confidence')
 
       style_features = {
         "net_h1": net_h1.outputs,
@@ -127,4 +139,4 @@ class MartaGanBasicNetWork:
         "net_h5": net_h5.outputs,
       }
 
-    return output_confidence, output_code, feature.outputs, style_features
+    return output_confidence, output_pair_confidence, multi_feature_layer.outputs, style_features
