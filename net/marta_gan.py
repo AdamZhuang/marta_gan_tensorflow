@@ -2,7 +2,6 @@ import logging
 import math
 import os
 import time
-from glob import glob
 
 import numpy as np
 import tensorflow as tf
@@ -10,14 +9,12 @@ import tensorlayer as tl
 
 from net.basic_network import MartaGanBasicNetWork
 from utils import data_utils
-from utils.utils import Utils
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
 
 
 class MartaGan:
   def __init__(self,
-               dataset_path="./dataset/uc_test_256",
                checkpoint_path="./checkpoint",
                sample_path="./sample",
                class_num=21,
@@ -26,7 +23,6 @@ class MartaGan:
                image_dim=3,
                learning_rate=0.001,
                beta1=0.5):
-    self.dataset_path = dataset_path
     self.checkpoint_path = checkpoint_path
     self.sample_path = sample_path
     self.class_num = class_num
@@ -72,13 +68,12 @@ class MartaGan:
       is_train=True,
       reuse=True)
 
-    self.sample_image =
+    self.sample_image = self.sampler(self.input_code, self.input_noise);
 
     #####################
     # loss and optimizer
     #####################
-    self.g_loss, self.g_optimizer = self._generator(self.net_g,
-                                                    self.output_confidence_fake.outputs,
+    self.g_loss, self.g_optimizer = self._generator(self.output_confidence_fake.outputs,
                                                     self.feature_real,
                                                     self.feature_fake,
                                                     self.style_features_fake,
@@ -115,7 +110,8 @@ class MartaGan:
           batch_images_real, batch_labels_real = data_utils.get_one_batch_data(cur_batch_file_names, image_label_dict,
                                                                                self.class_num)
           # fake image input noise
-          input_noise = np.random.uniform(low=-1, high=1, size=(batch_size, self.input_noise_dim)).astype(
+          input_noise = np.random.uniform(low=-1, high=1,
+                                          size=(len(cur_batch_file_names), self.input_noise_dim)).astype(
             np.float32)
 
           start_time = time.time()
@@ -136,25 +132,31 @@ class MartaGan:
 
         if cur_epoch % 1 == 0:
           # static_input_noise
-          input_noise = np.random.uniform(low=-1, high=1, size=(self.batch_size, self.input_noise_dim)).astype(
-            np.float32)
+
           # save images
-          for sample_image_num in range(3):
-            code = np.random.randint(0, 21)
-            batch_one_hot = data_utils.get_batch_one_hot(code, batch_size, self.class_num)
+          for sample_image_num in range(1):
+            code = np.arange(self.class_num)
+            batch_one_hot = data_utils.get_batch_one_hot(code, self.class_num)
+
+            input_noise = np.random.uniform(low=-1, high=1, size=(len(code), self.input_noise_dim)).astype(
+              np.float32)
 
             images = sess.run(self.sample_image, feed_dict={self.input_code: batch_one_hot,
                                                             self.input_noise: input_noise})
             # save images
             side = 1
-            while side * side < self.batch_size:
+            while side * side < batch_size:
               side += 1
-            Utils.save_images(images, [side, side], os.path.join(self.sample_path,
-                                                                 "epoch{}-sample{}.png".format(str(cur_epoch),
-                                                                                               str(code))))
+
+            print(images.shape)
+            data_utils.save_image(images,
+                                  side,
+                                  side,
+                                  os.path.join(self.sample_path,
+                                                       "epoch{}-sample{}.png".format(str(cur_epoch), str(sample_image_num))))
           logging.info("sample image saved!")
 
-        if cur_epoch % 1 == 0:
+        if cur_epoch % 10 == 0:
           # save net param
           g_vars = tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES, scope="generator")
           d_vars = tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES, scope="discriminator")
@@ -164,7 +166,7 @@ class MartaGan:
           tl.files.save_npz(d_vars, name=d_vars_name, sess=sess)
           logging.info("net param saved!")
 
-  def _generator(self, net_g, output_confidence, feature_real, feature_fake, style_features_fake, style_features_real):
+  def _generator(self, output_confidence, feature_real, feature_fake, style_features_fake, style_features_real):
     """
     the generator should gen image that is smiler with real image
 
@@ -192,7 +194,7 @@ class MartaGan:
     g_loss = g_loss1 + 0.1 * g_loss2 + 10 * g_loss3
 
     # optimizer of generator
-    g_vars = tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES, scope="discriminator")
+    g_vars = tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES, scope="generator")
     # self.net_g.print_params(False)
     g_optimizer = tf.train.AdamOptimizer(self.learning_rate, beta1=self.beta1).minimize(g_loss, var_list=g_vars)
 
@@ -214,7 +216,9 @@ class MartaGan:
     d_loss1 = d_loss_real + d_loss_fake
 
     # incorrect pair should add loss
-    d_loss2 = tf.reduce_mean(output_pair_confidence_fake.outputs)
+    d_loss_pair_fake = tf.reduce_mean(tf.sigmoid(output_pair_confidence_fake.outputs))
+    d_loss_pair_real = -tf.reduce_mean(tf.sigmoid(output_pair_confidence_real.outputs))
+    d_loss2 = d_loss_pair_fake + d_loss_pair_real
 
     d_loss = d_loss1 + d_loss2
 
@@ -235,11 +239,12 @@ class MartaGan:
   def generate_image(self, num):
     pass
 
-  def sampler(self, input_data):
+  def sampler(self, input_c, input_noise):
     """
     set is_train=False, reuse=True, fix param ten generate sampler
 
     """
-    net_g = MartaGanBasicNetWork.generator(input_z=input_data, image_size=self.image_size, is_train=False,
+    net_g = MartaGanBasicNetWork.generator(input_c=input_c, input_z=input_noise, image_size=self.image_size,
+                                           is_train=False,
                                            reuse=True)
     return net_g.outputs

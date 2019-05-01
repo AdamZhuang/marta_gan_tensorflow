@@ -10,5 +10,5 @@ def read_image(image_path_list):
   return np.array(images)
 
 
-def save_image(image):
-  pass
+def save_image(filename, image):
+  cv2.imwrite(filename, image)
