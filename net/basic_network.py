@@ -122,14 +122,13 @@ class MartaGanBasicNetWork:
       output_confidence = DenseLayer(prev_layer=multi_feature_layer, n_units=1, act=tf.identity, W_init=w_init,
                                      name='d/output_confidence')
 
-
       # to judge a image is pair to code or not
-      img_embedding = DenseLayer(prev_layer=multi_feature_layer, n_units=class_num, act=tf.identity, W_init=w_init,
-                                name='d/img_embedding')
+      img_embedding = DenseLayer(prev_layer=multi_feature_layer, n_units=100, act=tf.identity, W_init=w_init,
+                                 name='d/img_embedding')
       code_embedding = InputLayer(input_c, name='d/code_embedding')
       pair_layer = ConcatLayer([code_embedding, img_embedding], name='d/pair_layer')
       output_pair_confidence = DenseLayer(prev_layer=pair_layer, n_units=1, act=tf.identity, W_init=w_init,
-                               name='d/output_pair_confidence')
+                                          name='d/output_pair_confidence')
 
       style_features = {
         "net_h1": net_h1.outputs,

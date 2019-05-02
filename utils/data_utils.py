@@ -57,3 +57,5 @@ def save_image(images, horizontal_num, vertical_num, filename):
   image_utils.save_image(filename, img)
 
 
+
+
