@@ -20,7 +20,10 @@ class MartaGanBasicNetWork:
 
     # build network
     with tf.variable_scope("generator", reuse=reuse):
-      net_in = InputLayer(input_z, name='g/in')
+      input_data = tf.concat([input_c, input_z], axis=1)
+
+      net_in = InputLayer(input_data, name='g/in')
+      # net_in = InputLayer(input_z, name='g/in')
 
       net_h0 = DenseLayer(prev_layer=net_in, n_units=n_filter * 32 * int(image_size / 64) * int(image_size / 64),
                           W_init=w_init,
@@ -112,16 +115,49 @@ class MartaGanBasicNetWork:
       global_max3 = FlattenLayer(prev_layer=net_h5, name='d/h5/flatten')
 
       # multi-feature
-      feature = ConcatLayer([global_max1, global_max2, global_max3], name='d/concat_layer1')
+      feature = ConcatLayer([global_max1, global_max2, global_max3], name='d/feature')
 
-      output_scalar = DenseLayer(prev_layer=feature, n_units=1, act=tf.identity, W_init=w_init, name='d/h6/lin_sigmoid')
+      real_or_not_scalar = DenseLayer(prev_layer=feature, n_units=1, act=tf.identity,
+                                      W_init=w_init,
+                                      name='d/real_or_not_scalar')
+
+
+      feature_embedding_1 = DenseLayer(prev_layer=global_max1, n_units=128, act=tf.identity,
+                                       W_init=w_init,
+                                       name='d/feature_embedding_1')
+      feature_embedding_2 = DenseLayer(prev_layer=feature_embedding_1, n_units=64, act=tf.identity,
+                                       W_init=w_init,
+                                       name='d/feature_embedding_2')
+
+      input_code_layer = InputLayer(input_c, name='d/input_code_layer')
+
+      code_embedding_1 = DenseLayer(prev_layer=input_code_layer, n_units=32, act=tf.identity,
+                                    W_init=w_init,
+                                    name='d/code_embedding_1')
+      code_embedding_2 = DenseLayer(prev_layer=code_embedding_1, n_units=64, act=tf.identity,
+                                    W_init=w_init,
+                                    name='d/code_embedding_2')
+
+      embedding_concat_layer = ConcatLayer([code_embedding_2, feature_embedding_2], name='d/embedding_concat_layer')
+
+      hidden_1 = DenseLayer(prev_layer=embedding_concat_layer, n_units=128, act=tf.identity,
+                            W_init=w_init,
+                            name='d/hidden_1')
+      pair_scalar = DenseLayer(prev_layer=hidden_1, n_units=1, act=tf.identity, W_init=w_init,
+                               name='d/pair_scalar')
+
+      output_scalar = ElementwiseLayer(prev_layer=[pair_scalar, real_or_not_scalar],
+                                       combine_fn=tf.add,
+                                       name='d/output_scalar')
+
+      # output_scalar = DenseLayer(prev_layer=feature, n_units=1, act=tf.identity, W_init=w_init, name='d/h6/lin_sigmoid')
 
       style_features = {
-        "net_h1":net_h1.outputs,
-        "net_h2":net_h2.outputs,
-        "net_h3":net_h3.outputs,
-        "net_h4":net_h4.outputs,
-        "net_h5":net_h5.outputs,
+        "net_h1": net_h1.outputs,
+        "net_h2": net_h2.outputs,
+        "net_h3": net_h3.outputs,
+        "net_h4": net_h4.outputs,
+        "net_h5": net_h5.outputs,
       }
 
     return output_scalar, feature.outputs, style_features
