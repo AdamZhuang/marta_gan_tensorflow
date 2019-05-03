@@ -8,7 +8,7 @@ class MartaGanBasicNetWork:
     pass
 
   @staticmethod
-  def generator(input_data, image_size, is_train=True, reuse=False):
+  def generator(input_c, input_z, image_size, is_train=True, reuse=False):
     # filter_size
     k = 4
     # n_filter
@@ -20,7 +20,7 @@ class MartaGanBasicNetWork:
 
     # build network
     with tf.variable_scope("generator", reuse=reuse):
-      net_in = InputLayer(input_data, name='g/in')
+      net_in = InputLayer(input_z, name='g/in')
 
       net_h0 = DenseLayer(prev_layer=net_in, n_units=n_filter * 32 * int(image_size / 64) * int(image_size / 64),
                           W_init=w_init,
@@ -63,7 +63,7 @@ class MartaGanBasicNetWork:
     return net_h6
 
   @staticmethod
-  def feature_extract_layer(input_data, is_train=True, reuse=False):
+  def discriminator(input_c, input_img, is_train=True, reuse=False):
     # filter size
     k = 5
     # n_filter
@@ -75,7 +75,7 @@ class MartaGanBasicNetWork:
 
     # build network
     with tf.variable_scope("discriminator", reuse=reuse):
-      net_in = InputLayer(input_data, name='d/in')
+      net_in = InputLayer(input_img, name='d/in')
 
       net_h0 = Conv2d(prev_layer=net_in, n_filter=n_filter * 1, filter_size=(k, k), strides=(2, 2),
                       act=lambda x: tf.nn.leaky_relu(x, 0.2), padding='SAME', W_init=w_init, name='d/h0/conv2d')
@@ -114,11 +114,7 @@ class MartaGanBasicNetWork:
       # multi-feature
       feature = ConcatLayer([global_max1, global_max2, global_max3], name='d/concat_layer1')
 
-      net_h6 = DenseLayer(prev_layer=feature, n_units=1, act=tf.identity, W_init=w_init, name='d/h6/lin_sigmoid')
-
-      logits = net_h6.outputs
-
-      net_h6.outputs = tf.nn.sigmoid(net_h6.outputs)
+      output_scalar = DenseLayer(prev_layer=feature, n_units=1, act=tf.identity, W_init=w_init, name='d/h6/lin_sigmoid')
 
       style_features = {
         "net_h1":net_h1.outputs,
@@ -128,4 +124,4 @@ class MartaGanBasicNetWork:
         "net_h5":net_h5.outputs,
       }
 
-    return net_h6, logits, feature.outputs, style_features
+    return output_scalar, feature.outputs, style_features

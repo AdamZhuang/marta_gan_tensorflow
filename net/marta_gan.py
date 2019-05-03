@@ -28,7 +28,7 @@ class MartaGan:
     self.sample_path = sample_path
     self.image_size = image_size
     self.image_dim = image_dim
-    self.input_noise_dim = input_noise_dim
+    self.input_z_dim = input_noise_dim
     self.learning_rate = learning_rate
     self.beta1 = beta1
     self.batch_size = batch_size
@@ -42,13 +42,17 @@ class MartaGan:
     # for fake images
     #####################
     # random noise for generator
-    self.input_noise = tf.placeholder(tf.float32, [self.batch_size, self.input_noise_dim], name='input_z')
+    self.input_z = tf.placeholder(tf.float32, [self.batch_size, self.input_z_dim], name='input_z')
     # the fake dataset of generating
-    self.net_g = MartaGanBasicNetWork.generator(input_data=self.input_noise, image_size=self.image_size, is_train=True,
-                                                reuse=False)
+    self.output_img = MartaGanBasicNetWork.generator(input_c=None,
+                                                     input_z=self.input_z,
+                                                     image_size=self.image_size,
+                                                     is_train=True,
+                                                     reuse=False)
     # feature of fake images
-    self.net_feature_extract_fake, self.logits_fake, self.feature_fake, self.style_features_fake = MartaGanBasicNetWork.feature_extract_layer(
-      input_data=self.net_g.outputs,
+    self.output_scalar_fake, self.feature_fake, self.style_features_fake = MartaGanBasicNetWork.discriminator(
+      input_c=None,
+      input_img=self.output_img.outputs,
       is_train=True,
       reuse=False)
 
@@ -59,25 +63,26 @@ class MartaGan:
     self.real_images = tf.placeholder(tf.float32, [self.batch_size, self.image_size, self.image_size, self.image_dim],
                                       name='real_images')
     # feature of real images
-    self.net_feature_extract_real, self.logits_real, self.feature_real, self.style_features_real = MartaGanBasicNetWork.feature_extract_layer(
-      input_data=self.real_images,
+    self.output_scalar_real, self.feature_real, self.style_features_real = MartaGanBasicNetWork.discriminator(
+      input_c=None,
+      input_img=self.real_images,
       is_train=True,
       reuse=True)
 
     #####################
     # sample
     #####################
-    self.sample_image = self.sampler(self.input_noise)
+    self.sample_image = self.sampler(self.input_z)
 
     #####################
     # loss and optimizer
     #####################
-    self.g_loss, self.g_optimizer = self.generator(self.net_g, self.logits_fake, self.feature_real, self.feature_fake,
-                                                   self.style_features_fake, self.style_features_real)
-    self.d_loss, self.d_optimizer = self.discriminator(self.net_feature_extract_fake, self.logits_real,
-                                                       self.logits_fake)
+    self.g_loss, self.g_optimizer = self.generator(self.output_scalar_fake,
+                                                   self.feature_real, self.feature_fake,
+                                                   self.style_features_real, self.style_features_fake)
+    self.d_loss, self.d_optimizer = self.discriminator(self.output_scalar_real, self.output_scalar_fake)
 
-  def load_parma(self, sess, net_g, net_d, load_epoch):
+  def _load_param(self, sess, net_g, net_d, load_epoch):
     try:
       g_vars_name = "./checkpoint/g_vars_{}.npz".format(str(load_epoch))
       d_vars_name = "./checkpoint/d_vars_{}.npz".format(str(load_epoch))
@@ -96,9 +101,9 @@ class MartaGan:
       # get dataset files path
       data_files = glob(os.path.join(self.dataset_path, "*.jpg"))
       # load param
-      self.load_parma(sess, self.net_g, self.net_feature_extract_fake, load_epoch)
+      # self.load_parma(sess, self.net_g, self.net_feature_extract_fake, load_epoch)
       # static_input_noise
-      static_input_noise = np.random.uniform(low=-1, high=1, size=(self.batch_size, self.input_noise_dim)).astype(
+      static_input_noise = np.random.uniform(low=-1, high=1, size=(self.batch_size, self.input_z_dim)).astype(
         np.float32)
       for cur_epoch in range(load_epoch + 1, epoch):
         # every epoch shuffle data_files
@@ -107,7 +112,7 @@ class MartaGan:
         total_batch = int(len(data_files) / self.batch_size)
         for cur_batch in range(total_batch):
           # every batch get a random input noise
-          input_noise = np.random.uniform(low=-1, high=1, size=(self.batch_size, self.input_noise_dim)).astype(
+          input_z = np.random.uniform(low=-1, high=1, size=(self.batch_size, self.input_z_dim)).astype(
             np.float32)
           # get one batch of real images
           batch_files = data_files[cur_batch * self.batch_size:(cur_batch + 1) * self.batch_size]
@@ -119,12 +124,12 @@ class MartaGan:
 
           # train d
           d_loss, _ = sess.run([self.d_loss, self.d_optimizer],
-                               feed_dict={self.input_noise: input_noise, self.real_images: batch_real_images})
+                               feed_dict={self.input_z: input_z, self.real_images: batch_real_images})
 
           # train g
           for _ in range(2):
             g_loss, _ = sess.run([self.g_loss, self.g_optimizer],
-                                 feed_dict={self.input_noise: input_noise, self.real_images: batch_real_images})
+                                 feed_dict={self.input_z: input_z, self.real_images: batch_real_images})
 
           end_time = time.time()
 
@@ -134,7 +139,7 @@ class MartaGan:
         if cur_epoch % 1 == 0:
           # save images
           for sample_image_num in range(1):
-            images = sess.run(self.sample_image, feed_dict={self.input_noise: static_input_noise,
+            images = sess.run(self.sample_image, feed_dict={self.input_z: static_input_noise,
                                                             self.real_images: batch_real_images})
             # save images
             side = 1
@@ -147,7 +152,7 @@ class MartaGan:
 
         if cur_epoch % 10 == 0:
           # save net param
-          g_vars = self.net_g.all_params
+          g_vars = self.output_img.all_params
           d_vars = self.net_feature_extract_fake.all_params
           g_vars_name = os.path.join(self.checkpoint_path, "g_vars_{}.npz".format(str(cur_epoch)))
           d_vars_name = os.path.join(self.checkpoint_path, "d_vars_{}.npz".format(str(cur_epoch)))
@@ -155,7 +160,7 @@ class MartaGan:
           tl.files.save_npz(d_vars, name=d_vars_name, sess=sess)
           logging.info("net param saved!")
 
-  def generator(self, net_g, logits_fake, feature_real, feature_fake, style_features_fake, style_features_real):
+  def generator(self, output_scalar_fake, feature_real, feature_fake, style_features_real, style_features_fake):
     """
     the generator should gen image that is smiler with real image
 
@@ -165,8 +170,8 @@ class MartaGan:
 
     """
     # loss of generator
-    g_loss1 = tf.reduce_mean(tf.nn.sigmoid_cross_entropy_with_logits(logits=logits_fake,
-                                                                     labels=tf.ones_like(logits_fake)))
+    g_loss1 = tf.reduce_mean(tf.nn.sigmoid_cross_entropy_with_logits(logits=output_scalar_fake.outputs,
+                                                                     labels=tf.ones_like(output_scalar_fake.outputs)))
     g_loss2 = tf.reduce_mean(tf.nn.l2_loss(feature_real - feature_fake)) / (self.image_size * self.image_size)
     g_loss3 = 0
     for layer_name in style_features_fake:
@@ -183,26 +188,28 @@ class MartaGan:
     g_loss = g_loss1 + 0.1 * g_loss2 + 10 * g_loss3
 
     # optimizer of generator
-    g_vars = net_g.all_params
+    g_vars = self.output_img.all_params
     # self.net_g.print_params(False)
     g_optimizer = tf.train.AdamOptimizer(self.learning_rate, beta1=self.beta1).minimize(g_loss, var_list=g_vars)
 
     return g_loss, g_optimizer
 
-  def discriminator(self, net_feature_extract_fake, logits_real, logits_fake):
+  def discriminator(self, output_scalar_real, output_scalar_fake):
     """
     the discriminator should marked real image as 1 and mark fake image as 0
 
     """
     # loss of discriminator
     d_loss_real = tf.reduce_mean(
-      tf.nn.sigmoid_cross_entropy_with_logits(logits=logits_real, labels=tf.ones_like(logits_real)))  # real == 1
+      tf.nn.sigmoid_cross_entropy_with_logits(logits=output_scalar_real.outputs,
+                                              labels=tf.ones_like(output_scalar_real.outputs)))  # real == 1
     d_loss_fake = tf.reduce_mean(
-      tf.nn.sigmoid_cross_entropy_with_logits(logits=logits_fake, labels=tf.zeros_like(logits_fake)))  # fake == 0
+      tf.nn.sigmoid_cross_entropy_with_logits(logits=output_scalar_fake.outputs,
+                                              labels=tf.zeros_like(output_scalar_fake.outputs)))  # fake == 0
     d_loss = d_loss_real + d_loss_fake
 
     # optimizer of discriminator
-    d_vars = net_feature_extract_fake.all_params
+    d_vars = output_scalar_real.all_params
     d_optimizer = tf.train.AdamOptimizer(self.learning_rate, beta1=self.beta1).minimize(d_loss, var_list=d_vars)
 
     return d_loss, d_optimizer
@@ -212,7 +219,10 @@ class MartaGan:
     set is_train=False, reuse=True, fix param ten generate sampler
 
     """
-    net_g = MartaGanBasicNetWork.generator(input_data=input_data, image_size=self.image_size, is_train=False,
+    net_g = MartaGanBasicNetWork.generator(input_c=None,
+                                           input_z=input_data,
+                                           image_size=self.image_size,
+                                           is_train=False,
                                            reuse=True)
     return net_g.outputs
 
